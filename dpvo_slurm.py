@@ -53,6 +53,17 @@ def run(cfg, network, video_path, calib, stride=1, skip=0, viz=False, timeit=Fal
 
     return slam.terminate(), (points, colors, (*intrinsics, H, W))
 
+def is_valid_video(video_path):
+    """Check if video file is valid and not corrupted."""
+    try:
+        import subprocess
+        # Quick check using ffprobe to see if video is readable
+        cmd = ['ffprobe', '-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=s=x:p=0', video_path]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+        return result.returncode == 0 and len(result.stdout.decode().strip()) > 0
+    except:
+        return False
+
 def process_videos(videos, cfg, network, calib, stride, skip, viz, timeit, output_dir, args):
     for video_file in videos:
         video_path = video_file
@@ -61,8 +72,17 @@ def process_videos(videos, cfg, network, calib, stride, skip, viz, timeit, outpu
         Path(video_output_dir).mkdir(parents=True, exist_ok=True)
 
         print(f"Processing {video_file}...")
-
-        (poses, tstamps), (points, colors, calib_info) = run(cfg, network, video_path, calib, stride, skip, viz, timeit)
+        
+        # Check if video is valid before processing
+        if not is_valid_video(video_path):
+            print(f"Skipping corrupted video: {video_file}")
+            continue
+            
+        try:
+            (poses, tstamps), (points, colors, calib_info) = run(cfg, network, video_path, calib, stride, skip, viz, timeit)
+        except Exception as e:
+            print(f"Error processing {video_file}: {e}")
+            continue
         trajectory = PoseTrajectory3D(positions_xyz=poses[:, :3], orientations_quat_wxyz=poses[:, [6, 3, 4, 5]], timestamps=tstamps)
 
         if args.save_ply:
